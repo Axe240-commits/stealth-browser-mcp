@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 echo "=== Stealth Browser MCP Setup ==="
 
 # Check for system dependencies
-echo "[1/4] Checking system dependencies..."
+echo "[1/5] Checking system dependencies..."
 MISSING_LIBS=""
 for lib in libnspr4.so libnss3.so libatk-1.0.so.0 libatk-bridge-2.0.so.0 \
            libdrm.so.2 libxkbcommon.so.0 libXcomposite.so.1 libXdamage.so.1 \
@@ -23,19 +23,29 @@ if [ -n "$MISSING_LIBS" ]; then
 fi
 echo "  System dependencies OK"
 
+# Check for Xvfb (needed for headed mode without a display)
+if ! command -v Xvfb &>/dev/null; then
+    echo "  WARNING: Xvfb not found. Install with: sudo apt-get install -y xvfb"
+    echo "  (Headed mode will require a real display without Xvfb)"
+fi
+
 # Create venv if needed
-echo "[2/4] Setting up virtual environment..."
+echo "[2/5] Setting up virtual environment..."
 if [ ! -d ".venv" ]; then
     uv venv
 fi
 
 # Install project with dependencies
-echo "[3/4] Installing Python dependencies..."
+echo "[3/5] Installing Python dependencies..."
 uv pip install -e ".[dev]"
 
 # Install Patchright's Chromium
-echo "[4/4] Installing Patchright Chromium..."
+echo "[4/5] Installing Patchright Chromium..."
 .venv/bin/python -m patchright install chromium
+
+# Fetch Camoufox browser
+echo "[5/5] Fetching Camoufox Firefox..."
+.venv/bin/python -c "import camoufox; camoufox.install()" 2>/dev/null || echo "  Camoufox fetch skipped (install manually if needed)"
 
 echo ""
 echo "=== Setup complete ==="

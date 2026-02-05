@@ -43,6 +43,7 @@ class Session:
     id: str
     context: BrowserContext
     page: Page
+    engine: str = "chromium"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_used: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -119,6 +120,66 @@ class Session:
                 "extraction_method": method,
                 "timing_ms": elapsed,
                 "status_code": self._status_code,
+            }
+
+    async def navigate_only(
+        self,
+        url: str,
+        wait_until: str = "domcontentloaded",
+        wait_for: str | None = None,
+        timeout_ms: int = 30000,
+    ) -> dict:
+        """Navigate to URL without extracting content.
+
+        Same guards as navigate() (lock, timeouts, CAPTCHA, redirect/SSRF).
+        Returns lightweight dict without content.
+        """
+        async with self.lock:
+            self._touch()
+            start = time.monotonic()
+            self._status_code = None
+
+            response = await self.page.goto(
+                url, wait_until=wait_until, timeout=timeout_ms
+            )
+            if response:
+                self._status_code = response.status
+
+                # Check redirect chain for SSRF
+                if response.url != url:
+                    try:
+                        validate_redirect(response.url)
+                    except SecurityError:
+                        await self.page.goto("about:blank")
+                        raise
+
+            # Optional: wait for specific selector
+            if wait_for:
+                try:
+                    await self.page.wait_for_selector(
+                        wait_for, timeout=timeout_ms
+                    )
+                except Exception:
+                    logger.debug("wait_for selector %r timed out", wait_for)
+
+            # Detect CAPTCHA
+            captcha_detected = await self._detect_captcha()
+
+            # If CAPTCHA detected, wait 5s for auto-resolve (Cloudflare Turnstile)
+            if captcha_detected:
+                await asyncio.sleep(5)
+                captcha_detected = await self._detect_captcha()
+
+            title = await self.page.title()
+            elapsed = int((time.monotonic() - start) * 1000)
+
+            return {
+                "url": self.page.url,
+                "title": title,
+                "session_id": self.id,
+                "captcha_detected": captcha_detected,
+                "status_code": self._status_code,
+                "timing_ms": elapsed,
             }
 
     async def perform_action(
