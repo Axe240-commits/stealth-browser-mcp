@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import quote_plus
 
 VALID_X_SEARCH_MODES = {"top", "latest"}
+
+
+def dedupe_tweets(tweets: list[dict]) -> list[dict]:
+    """Deduplicate tweets by URL when available, otherwise by text/username pair."""
+    seen: set[str] = set()
+    results: list[dict] = []
+    for tweet in tweets:
+        key = tweet.get("tweet_url") or f"{tweet.get('username','')}::{tweet.get('tweet_text','')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(tweet)
+    return results
 
 
 def _js_extract_tweets_script() -> str:
@@ -104,6 +118,42 @@ async def extract_x_search_results(page, max_items: int = 20) -> dict:
     data = await page.evaluate(_js_extract_tweets_script(), max_items)
     data["max_items"] = max_items
     return data
+
+
+async def collect_x_search_results(page, max_items: int = 20, scroll_rounds: int = 0, sleep_fn=None) -> dict:
+    """Collect X search results across multiple scroll rounds with dedupe."""
+    max_items = max(1, min(int(max_items), 50))
+    scroll_rounds = max(0, min(int(scroll_rounds), 10))
+    sleep_fn = sleep_fn or asyncio.sleep
+
+    combined: list[dict] = []
+    rounds_completed = 0
+    current: dict = {"tweets": [], "extracted_count": 0, "page_url": getattr(page, 'url', None), "page_title": None}
+
+    for round_idx in range(scroll_rounds + 1):
+        current = await extract_x_search_results(page, max_items=max_items)
+        combined.extend(current.get("tweets", []))
+        deduped = dedupe_tweets(combined)
+        rounds_completed = round_idx + 1
+
+        if len(deduped) >= max_items or round_idx == scroll_rounds:
+            return {
+                **current,
+                "tweets": deduped[:max_items],
+                "extracted_count": min(len(deduped), max_items),
+                "scroll_rounds_completed": rounds_completed,
+            }
+
+        await page.evaluate("window.scrollBy(0, window.innerHeight * 1.5)")
+        await sleep_fn(1.2)
+
+    deduped = dedupe_tweets(combined)
+    return {
+        **current,
+        "tweets": deduped[:max_items],
+        "extracted_count": min(len(deduped), max_items),
+        "scroll_rounds_completed": rounds_completed,
+    }
 
 
 async def read_x_thread(page, max_items: int = 20) -> dict:

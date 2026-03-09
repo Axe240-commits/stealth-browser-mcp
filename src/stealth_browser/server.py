@@ -26,6 +26,7 @@ from stealth_browser.security import SecurityError, smart_truncate, validate_url
 from stealth_browser.x_extract import (
     VALID_X_SEARCH_MODES,
     build_x_search_url,
+    collect_x_search_results,
     extract_x_search_results as extract_x_search_results_from_page,
     read_x_thread as read_x_thread_from_page,
 )
@@ -436,6 +437,7 @@ async def search_x(
     query: str,
     mode: str = "latest",
     max_items: int = 20,
+    scroll_rounds: int = 0,
     session_id: str | None = None,
     profile_name: str | None = None,
     engine: str = "auto",
@@ -469,11 +471,16 @@ async def search_x(
             wait_until=app.config.wait_until,
             timeout_ms=app.config.navigation_timeout_ms,
         )
-        results = await extract_x_search_results_from_page(session.page, max_items=max_items)
+        results = await collect_x_search_results(
+            session.page,
+            max_items=max_items,
+            scroll_rounds=scroll_rounds,
+        )
         return {
             "query": query,
             "mode": mode,
             "search_url": search_url,
+            "scroll_rounds": scroll_rounds,
             "session_id": session.id,
             "engine": session.engine,
             "profile_name": session.profile_name,
@@ -490,6 +497,7 @@ async def research_x_topic(
     query: str,
     mode: str = "latest",
     max_items: int = 20,
+    scroll_rounds: int = 0,
     session_id: str | None = None,
     profile_name: str | None = None,
     engine: str = "auto",
@@ -500,6 +508,7 @@ async def research_x_topic(
         query=query,
         mode=mode,
         max_items=max_items,
+        scroll_rounds=scroll_rounds,
         session_id=session_id,
         profile_name=profile_name,
         engine=engine,

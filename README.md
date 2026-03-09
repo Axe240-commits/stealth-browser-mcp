@@ -114,11 +114,12 @@ Open an X search results page for a query and return structured tweet cards.
 | `query` | string | yes | Search query |
 | `mode` | string | no | `latest` (default) or `top` |
 | `max_items` | int | no | Max tweets to extract (1-50, default 20) |
+| `scroll_rounds` | int | no | Additional scroll/collect rounds (0-10, default 0) |
 | `session_id` | string | no | Reuse an existing session |
 | `profile_name` | string | no | Load a persisted login profile into a fresh session |
 | `engine` | string | no | `auto` (default), `chromium`, or `firefox` |
 
-**Returns:** `query`, `mode`, `search_url`, `session_id`, `tweets`, `extracted_count`, `captcha_detected`, `engine`
+**Returns:** `query`, `mode`, `search_url`, `session_id`, `tweets`, `extracted_count`, `scroll_rounds_completed`, `captcha_detected`, `engine`
 
 ### `extract_x_search_results`
 
@@ -140,6 +141,7 @@ Run X search and produce a lightweight heuristic topic summary from the extracte
 | `query` | string | yes | Search query |
 | `mode` | string | no | `latest` (default) or `top` |
 | `max_items` | int | no | Max tweets to extract (1-50, default 20) |
+| `scroll_rounds` | int | no | Additional scroll/collect rounds (0-10, default 0) |
 | `session_id` | string | no | Reuse an existing session |
 | `profile_name` | string | no | Load a persisted login profile into a fresh session |
 | `engine` | string | no | `auto` (default), `chromium`, or `firefox` |
