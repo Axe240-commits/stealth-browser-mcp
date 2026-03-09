@@ -28,6 +28,7 @@ from stealth_browser.x_extract import (
     build_x_search_url,
     extract_x_search_results as extract_x_search_results_from_page,
 )
+from stealth_browser.x_research import summarize_x_topic
 
 logger = logging.getLogger(__name__)
 
@@ -481,6 +482,36 @@ async def search_x(
         }
     except Exception as e:
         return {"error": str(e), "query": query, "session_id": session_id}
+
+
+@mcp.tool()
+async def research_x_topic(
+    query: str,
+    mode: str = "latest",
+    max_items: int = 20,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    engine: str = "auto",
+    ctx: Context = None,
+) -> dict:
+    """Run X search and return a lightweight heuristic research summary."""
+    search_result = await search_x(
+        query=query,
+        mode=mode,
+        max_items=max_items,
+        session_id=session_id,
+        profile_name=profile_name,
+        engine=engine,
+        ctx=ctx,
+    )
+    if "error" in search_result:
+        return search_result
+
+    summary = summarize_x_topic(query, search_result.get("tweets", []))
+    return {
+        **search_result,
+        "research": summary,
+    }
 
 
 # ---------------------------------------------------------------------------
