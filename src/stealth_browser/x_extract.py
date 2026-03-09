@@ -1,4 +1,4 @@
-"""X/Twitter-specific search extraction helpers."""
+"""X/Twitter-specific extraction helpers."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def dedupe_tweets(tweets: list[dict]) -> list[dict]:
     seen: set[str] = set()
     results: list[dict] = []
     for tweet in tweets:
-        key = tweet.get("tweet_url") or f"{tweet.get('username','')}::{tweet.get('tweet_text','')}"
+        key = tweet.get("tweet_url") or f"{tweet.get('username', '')}::{tweet.get('tweet_text', '')}"
         if key in seen:
             continue
         seen.add(key)
@@ -37,6 +37,29 @@ def _js_extract_tweets_script() -> str:
                 return Math.round(n * mult);
             };
 
+            const getStatusLink = (root) => Array.from(root.querySelectorAll('a[href]')).find(a => /\/status\//.test(a.getAttribute('href') || ''));
+            const getUserLinks = (root) => Array.from(root.querySelectorAll('a[href]')).filter(a => /^\/[A-Za-z0-9_]{1,20}$/.test(a.getAttribute('href') || ''));
+            const getMedia = (root) => {
+                const media = [];
+                root.querySelectorAll('img[src]').forEach((img) => {
+                    const src = img.getAttribute('src') || '';
+                    if (src && !src.includes('profile_images')) media.push({type: 'image', url: src});
+                });
+                root.querySelectorAll('video').forEach((video) => {
+                    const src = video.getAttribute('src') || video.currentSrc || '';
+                    media.push({type: 'video', url: src || null});
+                });
+                const deduped = [];
+                const seen = new Set();
+                for (const item of media) {
+                    const key = `${item.type}:${item.url || ''}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    deduped.push(item);
+                }
+                return deduped;
+            };
+
             const tweets = [];
             const seen = new Set();
             const cards = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
@@ -44,25 +67,24 @@ def _js_extract_tweets_script() -> str:
             for (const card of cards) {
                 if (tweets.length >= maxItems) break;
 
+                const fullText = clean(card.innerText);
+                if (!fullText) continue;
+
                 const textNode = card.querySelector('[data-testid="tweetText"]');
-                const text = clean(textNode ? textNode.innerText : card.innerText);
+                const text = clean(textNode ? textNode.innerText : fullText);
                 if (!text) continue;
 
-                const links = Array.from(card.querySelectorAll('a[href]'));
-                const statusLink = links.find(a => /\/status\//.test(a.getAttribute('href') || ''));
+                const statusLink = getStatusLink(card);
                 const tweetUrl = statusLink ? statusLink.href : null;
                 if (tweetUrl && seen.has(tweetUrl)) continue;
                 if (tweetUrl) seen.add(tweetUrl);
 
-                const timeEl = card.querySelector('time');
-                const timestamp = timeEl ? timeEl.getAttribute('datetime') : null;
-
-                const userLinks = links.filter(a => {
-                    const href = a.getAttribute('href') || '';
-                    return /^\/[A-Za-z0-9_]{1,20}$/.test(href);
-                });
+                const userLinks = getUserLinks(card);
                 const username = userLinks.length ? (userLinks[0].getAttribute('href') || '').replace(/^\//, '') : null;
                 const authorName = userLinks.length ? clean(userLinks[0].textContent) || username : username;
+
+                const timeEl = card.querySelector('time');
+                const timestamp = timeEl ? timeEl.getAttribute('datetime') : null;
 
                 const stats = {};
                 for (const name of ['reply', 'retweet', 'like', 'bookmark', 'view']) {
@@ -74,8 +96,24 @@ def _js_extract_tweets_script() -> str:
                     stats[`${name}_count`] = parseCount(firstLine);
                 }
 
-                const promoted = /promoted/i.test(clean(card.innerText));
-                const hasMedia = Boolean(card.querySelector('[data-testid="tweetPhoto"], video, [aria-label*="Image"], [aria-label*="Video"]'));
+                const quoteCard = Array.from(card.querySelectorAll('div[role="link"], a[href]')).find(el => {
+                    const href = el.getAttribute && el.getAttribute('href');
+                    return href && /\/status\//.test(href) && (!tweetUrl || !el.href || el.href !== tweetUrl);
+                });
+                let quotedTweet = null;
+                if (quoteCard) {
+                    const quotedUrl = quoteCard.href || quoteCard.getAttribute('href') || null;
+                    const quoteTextNode = quoteCard.querySelector ? quoteCard.querySelector('[data-testid="tweetText"]') : null;
+                    quotedTweet = {
+                        tweet_url: quotedUrl,
+                        tweet_text: clean(quoteTextNode ? quoteTextNode.innerText : quoteCard.innerText),
+                    };
+                }
+
+                const media = getMedia(card);
+                const promoted = /promoted/i.test(fullText);
+                const noise = (!tweetUrl && !username) || /who to follow/i.test(fullText) || /show more replies/i.test(fullText);
+                if (noise) continue;
 
                 tweets.push({
                     author_name: authorName,
@@ -83,8 +121,10 @@ def _js_extract_tweets_script() -> str:
                     tweet_text: text,
                     timestamp,
                     tweet_url: tweetUrl,
-                    has_media: hasMedia,
+                    has_media: media.length > 0,
+                    media,
                     is_promoted: promoted,
+                    quoted_tweet: quotedTweet,
                     ...stats,
                 });
             }
@@ -114,8 +154,9 @@ def build_x_search_url(query: str, mode: str = "top") -> str:
 async def extract_x_search_results(page, max_items: int = 20) -> dict:
     """Extract structured tweet cards from an X search result page."""
     max_items = max(1, min(int(max_items), 50))
-
     data = await page.evaluate(_js_extract_tweets_script(), max_items)
+    data["tweets"] = dedupe_tweets(data.get("tweets", []))[:max_items]
+    data["extracted_count"] = len(data["tweets"])
     data["max_items"] = max_items
     return data
 
@@ -160,11 +201,12 @@ async def read_x_thread(page, max_items: int = 20) -> dict:
     """Extract the visible tweets from a thread / tweet detail page."""
     max_items = max(1, min(int(max_items), 50))
     data = await page.evaluate(_js_extract_tweets_script(), max_items)
-    tweets = data.get("tweets", [])
+    tweets = dedupe_tweets(data.get("tweets", []))[:max_items]
     main_tweet = tweets[0] if tweets else None
     replies = tweets[1:] if len(tweets) > 1 else []
     return {
         **data,
+        "tweets": tweets,
         "main_tweet": main_tweet,
         "replies": replies,
         "reply_count_extracted": len(replies),

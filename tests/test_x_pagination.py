@@ -21,7 +21,6 @@ def test_dedupe_tweets_by_url_and_fallback_key():
 @pytest.mark.asyncio
 async def test_collect_x_search_results_across_scroll_rounds():
     page = AsyncMock()
-    page.title = AsyncMock(return_value="Search / X")
     page.url = "https://x.com/search?q=test"
     page.evaluate = AsyncMock(side_effect=[
         {
