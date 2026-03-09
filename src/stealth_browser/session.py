@@ -44,6 +44,7 @@ class Session:
     context: BrowserContext
     page: Page
     engine: str = "chromium"
+    profile_name: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_used: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

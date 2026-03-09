@@ -9,7 +9,7 @@ Built for use with [Claude Code](https://claude.ai/claude-code) and other MCP-co
 - **Dual Engine Architecture** — Patchright (Chromium) as primary engine, Camoufox (Firefox) as fallback with stronger anti-fingerprinting
 - **Auto Bot-Block Detection** — Detects Cloudflare, CAPTCHAs, and other bot protection; automatically retries with Firefox when `engine: auto`
 - **Headed Mode via Xvfb** — Runs real browser windows (not headless) to beat fingerprint detection
-- **7 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, and session management
+- **11 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, and persistent profile state save/load/list/delete
 - **3-Tier Content Extraction** — trafilatura → readability → innertext fallback chain
 - **SSRF-Hardened** — DNS resolution validation blocks localhost, private IPs, cloud metadata, `file://`
 - **Session Pooling** — Up to 5 isolated BrowserContext sessions per engine, with 10-minute idle eviction
@@ -65,6 +65,45 @@ Close a browser session and free its resources.
 | `session_id` | string | yes | Session to close |
 
 **Returns:** `status`, `session_id`
+
+### `save_session_state`
+
+Persist an active session's cookies and local storage to a named profile.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | yes | Session to persist |
+| `profile_name` | string | yes | Safe profile name to save under |
+
+**Returns:** `status`, `session_id`, `profile_name`, `storage_state_path`, `meta`
+
+### `load_session_state`
+
+Create a new session from a previously saved profile.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `profile_name` | string | yes | Saved profile name |
+| `session_id` | string | no | Optional custom session ID |
+| `engine` | string | no | `chromium` (default) or `firefox` |
+
+**Returns:** `status`, `session_id`, `profile_name`, `engine`, `meta`
+
+### `list_saved_profiles`
+
+List saved persistent profiles on disk.
+
+**Returns:** `profiles`, `count`
+
+### `delete_saved_profile`
+
+Delete a saved profile from disk.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `profile_name` | string | yes | Saved profile name |
+
+**Returns:** `status`, `profile_name`
 
 ### `scrape_webpage`
 
@@ -174,6 +213,10 @@ Then add permissions in `~/.claude/settings.json`:
       "mcp__stealth-browser__interact",
       "mcp__stealth-browser__extract",
       "mcp__stealth-browser__close_session",
+      "mcp__stealth-browser__save_session_state",
+      "mcp__stealth-browser__load_session_state",
+      "mcp__stealth-browser__list_saved_profiles",
+      "mcp__stealth-browser__delete_saved_profile",
       "mcp__stealth-browser__scrape_webpage",
       "mcp__stealth-browser__extract_structured_data",
       "mcp__stealth-browser__crawl_pages"
@@ -182,7 +225,7 @@ Then add permissions in `~/.claude/settings.json`:
 }
 ```
 
-Restart Claude Code. The 7 tools will be available immediately.
+Restart Claude Code. The tools will be available immediately.
 
 ## Architecture
 

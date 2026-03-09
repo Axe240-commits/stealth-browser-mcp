@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from patchright.async_api import async_playwright
 
 from stealth_browser.config import Config
+from stealth_browser.persistence import (
+    get_storage_state_path,
+    profile_exists,
+    write_profile_meta,
+)
 from stealth_browser.session import Session
 
 logger = logging.getLogger(__name__)
@@ -183,13 +188,18 @@ class BrowserManager:
     # ------------------------------------------------------------------
 
     async def get_or_create_session(
-        self, session_id: str | None = None, engine: str = "chromium"
+        self,
+        session_id: str | None = None,
+        engine: str = "chromium",
+        profile_name: str | None = None,
     ) -> Session:
         """Get an existing session or create a new one.
 
         Args:
             session_id: Reuse existing session if provided.
             engine: "chromium" or "firefox". Ignored when reusing an existing session.
+            profile_name: Optional persisted profile name. If present and no existing session
+                is reused, the browser context loads its storage_state.json when available.
         """
         async with self._lock:
             # Return existing session
@@ -211,11 +221,14 @@ class BrowserManager:
 
             # Create new session
             sid = session_id or str(uuid.uuid4())[:8]
-            context = await browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                java_script_enabled=True,
-            )
+            context_kwargs = {
+                "viewport": {"width": 1920, "height": 1080},
+                "java_script_enabled": True,
+            }
+            if profile_name and profile_exists(profile_name):
+                context_kwargs["storage_state"] = str(get_storage_state_path(profile_name))
 
+            context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
 
             # Block media resources if configured
@@ -225,10 +238,22 @@ class BrowserManager:
                     lambda route: route.abort(),
                 )
 
-            session = Session(id=sid, context=context, page=page, engine=engine)
+            session = Session(
+                id=sid,
+                context=context,
+                page=page,
+                engine=engine,
+                profile_name=profile_name,
+            )
             session._setup_request_interceptor()
             self._sessions[sid] = session
-            logger.info("Created %s session %s (%d active)", engine, sid, len(self._sessions))
+            logger.info(
+                "Created %s session %s (%d active, profile=%s)",
+                engine,
+                sid,
+                len(self._sessions),
+                profile_name or "-",
+            )
             return session
 
     async def close_session(self, session_id: str) -> None:
@@ -238,6 +263,43 @@ class BrowserManager:
             if session:
                 await session.close()
                 logger.info("Closed session %s (%d remaining)", session_id, len(self._sessions))
+
+    async def save_session_state(self, session_id: str, profile_name: str) -> dict:
+        """Persist a session's Playwright storage state to a named profile."""
+        session = self._sessions.get(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id!r} not found")
+
+        path = get_storage_state_path(profile_name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await session.context.storage_state(path=str(path))
+        session.profile_name = profile_name
+
+        meta = write_profile_meta(
+            profile_name,
+            {
+                "session_id": session.id,
+                "engine": session.engine,
+                "last_url": session.page.url,
+                "last_saved_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return {"profile_name": profile_name, "storage_state_path": str(path), "meta": meta}
+
+    async def load_persisted_session(
+        self,
+        profile_name: str,
+        session_id: str | None = None,
+        engine: str = "chromium",
+    ) -> Session:
+        """Create a new session from a persisted profile."""
+        if not profile_exists(profile_name):
+            raise ValueError(f"Profile {profile_name!r} not found")
+        return await self.get_or_create_session(
+            session_id=session_id,
+            engine=engine,
+            profile_name=profile_name,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

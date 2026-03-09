@@ -16,6 +16,12 @@ from stealth_browser.browser_manager import BrowserManager
 from stealth_browser.config import Config
 from stealth_browser.dom_extractor import extract_dom_data
 from stealth_browser.extractor import extract_content
+from stealth_browser.persistence import (
+    delete_profile,
+    list_profiles,
+    read_profile_meta,
+    validate_profile_name,
+)
 from stealth_browser.security import SecurityError, smart_truncate, validate_url
 
 logger = logging.getLogger(__name__)
@@ -325,6 +331,78 @@ async def close_session(
 
     await app.manager.close_session(session_id)
     return {"status": "closed", "session_id": session_id}
+
+
+@mcp.tool()
+async def save_session_state(
+    session_id: str,
+    profile_name: str,
+    ctx: Context = None,
+) -> dict:
+    """Save a session's cookies/local storage to a named persistent profile."""
+    app = _get_app(ctx)
+
+    try:
+        profile_name = validate_profile_name(profile_name)
+        result = await app.manager.save_session_state(session_id, profile_name)
+        return {"status": "saved", "session_id": session_id, **result}
+    except Exception as e:
+        return {"error": str(e), "session_id": session_id}
+
+
+@mcp.tool()
+async def load_session_state(
+    profile_name: str,
+    session_id: str | None = None,
+    engine: str = "chromium",
+    ctx: Context = None,
+) -> dict:
+    """Create a new browser session from a saved persistent profile."""
+    app = _get_app(ctx)
+
+    if engine not in {"chromium", "firefox"}:
+        return {"error": f"Invalid engine: {engine!r}. Valid: ['chromium', 'firefox']"}
+
+    try:
+        profile_name = validate_profile_name(profile_name)
+        session = await app.manager.load_persisted_session(
+            profile_name=profile_name,
+            session_id=session_id,
+            engine=engine,
+        )
+        return {
+            "status": "loaded",
+            "session_id": session.id,
+            "profile_name": profile_name,
+            "engine": session.engine,
+            "meta": read_profile_meta(profile_name),
+        }
+    except Exception as e:
+        return {"error": str(e), "profile_name": profile_name}
+
+
+@mcp.tool()
+async def list_saved_profiles(ctx: Context = None) -> dict:
+    """List all saved persistent browser profiles."""
+    _get_app(ctx)  # ensure lifespan initialized
+    profiles = list_profiles()
+    return {"profiles": profiles, "count": len(profiles)}
+
+
+@mcp.tool()
+async def delete_saved_profile(profile_name: str, ctx: Context = None) -> dict:
+    """Delete a saved persistent profile from disk."""
+    _get_app(ctx)  # ensure lifespan initialized
+
+    try:
+        profile_name = validate_profile_name(profile_name)
+        deleted = delete_profile(profile_name)
+        return {
+            "status": "deleted" if deleted else "not_found",
+            "profile_name": profile_name,
+        }
+    except Exception as e:
+        return {"error": str(e), "profile_name": profile_name}
 
 
 # ---------------------------------------------------------------------------
