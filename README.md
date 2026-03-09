@@ -9,7 +9,7 @@ Built for use with [Claude Code](https://claude.ai/claude-code) and other MCP-co
 - **Dual Engine Architecture** — Patchright (Chromium) as primary engine, Camoufox (Firefox) as fallback with stronger anti-fingerprinting
 - **Auto Bot-Block Detection** — Detects Cloudflare, CAPTCHAs, and other bot protection; automatically retries with Firefox when `engine: auto`
 - **Headed Mode via Xvfb** — Runs real browser windows (not headless) to beat fingerprint detection
-- **11 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, and persistent profile state save/load/list/delete
+- **13 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, persistent profile state save/load/list/delete, and X/Twitter search extraction helpers
 - **3-Tier Content Extraction** — trafilatura → readability → innertext fallback chain
 - **SSRF-Hardened** — DNS resolution validation blocks localhost, private IPs, cloud metadata, `file://`
 - **Session Pooling** — Up to 5 isolated BrowserContext sessions per engine, with 10-minute idle eviction
@@ -104,6 +104,32 @@ Delete a saved profile from disk.
 | `profile_name` | string | yes | Saved profile name |
 
 **Returns:** `status`, `profile_name`
+
+### `search_x`
+
+Open an X search results page for a query and return structured tweet cards.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | yes | Search query |
+| `mode` | string | no | `latest` (default) or `top` |
+| `max_items` | int | no | Max tweets to extract (1-50, default 20) |
+| `session_id` | string | no | Reuse an existing session |
+| `profile_name` | string | no | Load a persisted login profile into a fresh session |
+| `engine` | string | no | `auto` (default), `chromium`, or `firefox` |
+
+**Returns:** `query`, `mode`, `search_url`, `session_id`, `tweets`, `extracted_count`, `captcha_detected`, `engine`
+
+### `extract_x_search_results`
+
+Extract structured tweet cards from the current page of an existing X search session.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | yes | Active session already on an X search page |
+| `max_items` | int | no | Max tweets to extract (1-50, default 20) |
+
+**Returns:** `session_id`, `tweets`, `extracted_count`, `page_url`, `page_title`
 
 ### `scrape_webpage`
 
@@ -217,6 +243,8 @@ Then add permissions in `~/.claude/settings.json`:
       "mcp__stealth-browser__load_session_state",
       "mcp__stealth-browser__list_saved_profiles",
       "mcp__stealth-browser__delete_saved_profile",
+      "mcp__stealth-browser__search_x",
+      "mcp__stealth-browser__extract_x_search_results",
       "mcp__stealth-browser__scrape_webpage",
       "mcp__stealth-browser__extract_structured_data",
       "mcp__stealth-browser__crawl_pages"

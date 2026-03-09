@@ -23,6 +23,11 @@ from stealth_browser.persistence import (
     validate_profile_name,
 )
 from stealth_browser.security import SecurityError, smart_truncate, validate_url
+from stealth_browser.x_extract import (
+    VALID_X_SEARCH_MODES,
+    build_x_search_url,
+    extract_x_search_results as extract_x_search_results_from_page,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +408,79 @@ async def delete_saved_profile(profile_name: str, ctx: Context = None) -> dict:
         }
     except Exception as e:
         return {"error": str(e), "profile_name": profile_name}
+
+
+@mcp.tool()
+async def extract_x_search_results(
+    session_id: str,
+    max_items: int = 20,
+    ctx: Context = None,
+) -> dict:
+    """Extract structured tweet cards from the current X search page in a session."""
+    app = _get_app(ctx)
+    session = app.manager._sessions.get(session_id)
+    if not session:
+        return {"error": f"Session {session_id!r} not found"}
+
+    try:
+        results = await extract_x_search_results_from_page(session.page, max_items=max_items)
+        return {"session_id": session_id, **results}
+    except Exception as e:
+        return {"error": str(e), "session_id": session_id}
+
+
+@mcp.tool()
+async def search_x(
+    query: str,
+    mode: str = "latest",
+    max_items: int = 20,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    engine: str = "auto",
+    ctx: Context = None,
+) -> dict:
+    """Open X search for a query and return structured tweet results."""
+    app = _get_app(ctx)
+
+    if engine not in VALID_ENGINES:
+        return {"error": f"Invalid engine: {engine!r}. Valid: {sorted(VALID_ENGINES)}"}
+
+    if mode not in VALID_X_SEARCH_MODES:
+        return {"error": f"Invalid mode: {mode!r}. Valid: {sorted(VALID_X_SEARCH_MODES)}"}
+
+    try:
+        search_url = build_x_search_url(query, mode=mode)
+        validate_url(search_url)
+    except Exception as e:
+        return {"error": str(e), "query": query}
+
+    first_engine = _resolve_engine(engine, app)
+
+    try:
+        session = await app.manager.get_or_create_session(
+            session_id=session_id,
+            engine=first_engine,
+            profile_name=profile_name,
+        )
+        nav = await session.navigate_only(
+            url=search_url,
+            wait_until=app.config.wait_until,
+            timeout_ms=app.config.navigation_timeout_ms,
+        )
+        results = await extract_x_search_results_from_page(session.page, max_items=max_items)
+        return {
+            "query": query,
+            "mode": mode,
+            "search_url": search_url,
+            "session_id": session.id,
+            "engine": session.engine,
+            "profile_name": session.profile_name,
+            "status_code": nav.get("status_code"),
+            "captcha_detected": nav.get("captcha_detected"),
+            **results,
+        }
+    except Exception as e:
+        return {"error": str(e), "query": query, "session_id": session_id}
 
 
 # ---------------------------------------------------------------------------
