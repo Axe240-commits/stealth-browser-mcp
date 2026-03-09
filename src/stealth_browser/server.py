@@ -27,6 +27,7 @@ from stealth_browser.x_extract import (
     VALID_X_SEARCH_MODES,
     build_x_search_url,
     extract_x_search_results as extract_x_search_results_from_page,
+    read_x_thread as read_x_thread_from_page,
 )
 from stealth_browser.x_research import summarize_x_topic
 
@@ -512,6 +513,53 @@ async def research_x_topic(
         **search_result,
         "research": summary,
     }
+
+
+@mcp.tool()
+async def read_x_thread(
+    url: str,
+    max_items: int = 20,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    engine: str = "auto",
+    ctx: Context = None,
+) -> dict:
+    """Open a tweet/thread URL on X and extract the visible main tweet + replies."""
+    app = _get_app(ctx)
+
+    if engine not in VALID_ENGINES:
+        return {"error": f"Invalid engine: {engine!r}. Valid: {sorted(VALID_ENGINES)}"}
+
+    try:
+        validate_url(url)
+    except Exception as e:
+        return {"error": str(e), "url": url}
+
+    first_engine = _resolve_engine(engine, app)
+
+    try:
+        session = await app.manager.get_or_create_session(
+            session_id=session_id,
+            engine=first_engine,
+            profile_name=profile_name,
+        )
+        nav = await session.navigate_only(
+            url=url,
+            wait_until=app.config.wait_until,
+            timeout_ms=app.config.navigation_timeout_ms,
+        )
+        thread = await read_x_thread_from_page(session.page, max_items=max_items)
+        return {
+            "url": url,
+            "session_id": session.id,
+            "engine": session.engine,
+            "profile_name": session.profile_name,
+            "status_code": nav.get("status_code"),
+            "captcha_detected": nav.get("captcha_detected"),
+            **thread,
+        }
+    except Exception as e:
+        return {"error": str(e), "url": url, "session_id": session_id}
 
 
 # ---------------------------------------------------------------------------

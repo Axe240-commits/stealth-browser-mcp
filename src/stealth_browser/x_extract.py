@@ -7,24 +7,8 @@ from urllib.parse import quote_plus
 VALID_X_SEARCH_MODES = {"top", "latest"}
 
 
-def build_x_search_url(query: str, mode: str = "top") -> str:
-    mode = mode.lower().strip()
-    if mode not in VALID_X_SEARCH_MODES:
-        raise ValueError(f"Invalid mode: {mode!r}. Valid: {sorted(VALID_X_SEARCH_MODES)}")
-
-    encoded = quote_plus(query)
-    base = f"https://x.com/search?q={encoded}&src=typed_query"
-    if mode == "latest":
-        return f"{base}&f=live"
-    return base
-
-
-async def extract_x_search_results(page, max_items: int = 20) -> dict:
-    """Extract structured tweet cards from an X search result page."""
-    max_items = max(1, min(int(max_items), 50))
-
-    data = await page.evaluate(
-        r"""
+def _js_extract_tweets_script() -> str:
+    return r"""
         (maxItems) => {
             const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
             const parseCount = (value) => {
@@ -98,8 +82,41 @@ async def extract_x_search_results(page, max_items: int = 20) -> dict:
                 page_title: document.title,
             };
         }
-        """,
-        max_items,
-    )
+    """
+
+
+def build_x_search_url(query: str, mode: str = "top") -> str:
+    mode = mode.lower().strip()
+    if mode not in VALID_X_SEARCH_MODES:
+        raise ValueError(f"Invalid mode: {mode!r}. Valid: {sorted(VALID_X_SEARCH_MODES)}")
+
+    encoded = quote_plus(query)
+    base = f"https://x.com/search?q={encoded}&src=typed_query"
+    if mode == "latest":
+        return f"{base}&f=live"
+    return base
+
+
+async def extract_x_search_results(page, max_items: int = 20) -> dict:
+    """Extract structured tweet cards from an X search result page."""
+    max_items = max(1, min(int(max_items), 50))
+
+    data = await page.evaluate(_js_extract_tweets_script(), max_items)
     data["max_items"] = max_items
     return data
+
+
+async def read_x_thread(page, max_items: int = 20) -> dict:
+    """Extract the visible tweets from a thread / tweet detail page."""
+    max_items = max(1, min(int(max_items), 50))
+    data = await page.evaluate(_js_extract_tweets_script(), max_items)
+    tweets = data.get("tweets", [])
+    main_tweet = tweets[0] if tweets else None
+    replies = tweets[1:] if len(tweets) > 1 else []
+    return {
+        **data,
+        "main_tweet": main_tweet,
+        "replies": replies,
+        "reply_count_extracted": len(replies),
+        "max_items": max_items,
+    }
