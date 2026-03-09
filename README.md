@@ -9,7 +9,7 @@ Built for use with [Claude Code](https://claude.ai/claude-code) and other MCP-co
 - **Dual Engine Architecture** — Patchright (Chromium) as primary engine, Camoufox (Firefox) as fallback with stronger anti-fingerprinting
 - **Auto Bot-Block Detection** — Detects Cloudflare, CAPTCHAs, and other bot protection; automatically retries with Firefox when `engine: auto`
 - **Headed Mode via Xvfb** — Runs real browser windows (not headless) to beat fingerprint detection
-- **16 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, persistent profile state save/load/list/delete, X/Twitter search extraction helpers, heuristic topic research summaries, thread readers, and deep topic research with normalized report output
+- **18 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, persistent profile state save/load/list/delete, X/Twitter search extraction helpers, heuristic topic research summaries, thread readers, deep topic research, and saved report bundles
 - **3-Tier Content Extraction** — trafilatura → readability → innertext fallback chain
 - **SSRF-Hardened** — DNS resolution validation blocks localhost, private IPs, cloud metadata, `file://`
 - **Session Pooling** — Up to 5 isolated BrowserContext sessions per engine, with 10-minute idle eviction
@@ -180,6 +180,32 @@ Run X search, pick a few high-signal tweets, load their thread pages, and produc
 
 **Returns:** `deep_dive_candidates`, `threads`, `deep_research`, `normalized`, and `report_markdown` in addition to the base search output
 
+### `save_x_research_report`
+
+Run topic research (normal or deep) and save JSON + markdown report bundle to disk.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | yes | Search query |
+| `deep` | bool | no | If true, use deep research workflow |
+| `mode` | string | no | `latest` (default) or `top` |
+| `max_items` | int | no | Max tweets to collect |
+| `scroll_rounds` | int | no | Additional search scroll rounds |
+| `deep_dive_count` | int | no | Thread deep-dive count |
+| `thread_items` | int | no | Max tweets per thread |
+| `session_id` | string | no | Reuse an existing session |
+| `profile_name` | string | no | Load a persisted login profile into a fresh session |
+| `engine` | string | no | `auto` (default), `chromium`, or `firefox` |
+| `report_name` | string | no | Optional custom output name |
+
+**Returns:** research output plus `saved_report` paths
+
+### `list_saved_x_reports`
+
+List saved research report bundles from disk.
+
+**Returns:** `reports`, `count`
+
 ### `scrape_webpage`
 
 Navigate to a URL, extract content in the requested format, and auto-close the session.
@@ -297,6 +323,8 @@ Then add permissions in `~/.claude/settings.json`:
       "mcp__stealth-browser__research_x_topic",
       "mcp__stealth-browser__read_x_thread",
       "mcp__stealth-browser__research_x_topic_deep",
+      "mcp__stealth-browser__save_x_research_report",
+      "mcp__stealth-browser__list_saved_x_reports",
       "mcp__stealth-browser__scrape_webpage",
       "mcp__stealth-browser__extract_structured_data",
       "mcp__stealth-browser__crawl_pages"

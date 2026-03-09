@@ -35,7 +35,12 @@ from stealth_browser.x_research import (
     summarize_deep_research,
     summarize_x_topic,
 )
-from stealth_browser.x_report import normalize_research_result, render_research_markdown
+from stealth_browser.x_report import (
+    list_saved_reports,
+    normalize_research_result,
+    render_research_markdown,
+    save_report_bundle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +638,62 @@ async def research_x_topic_deep(
     result["normalized"] = normalize_research_result(result, kind="deep_topic")
     result["report_markdown"] = render_research_markdown(result)
     return result
+
+
+@mcp.tool()
+async def save_x_research_report(
+    query: str,
+    deep: bool = False,
+    mode: str = "latest",
+    max_items: int = 20,
+    scroll_rounds: int = 1,
+    deep_dive_count: int = 3,
+    thread_items: int = 10,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    engine: str = "auto",
+    report_name: str | None = None,
+    ctx: Context = None,
+) -> dict:
+    """Run X research and save normalized JSON + markdown reports to disk."""
+    result = await (
+        research_x_topic_deep(
+            query=query,
+            mode=mode,
+            max_items=max_items,
+            scroll_rounds=scroll_rounds,
+            deep_dive_count=deep_dive_count,
+            thread_items=thread_items,
+            session_id=session_id,
+            profile_name=profile_name,
+            engine=engine,
+            ctx=ctx,
+        )
+        if deep
+        else research_x_topic(
+            query=query,
+            mode=mode,
+            max_items=max_items,
+            scroll_rounds=scroll_rounds,
+            session_id=session_id,
+            profile_name=profile_name,
+            engine=engine,
+            ctx=ctx,
+        )
+    )
+    if "error" in result:
+        return result
+
+    saved = save_report_bundle(result, kind="deep_topic" if deep else "topic", name=report_name or query)
+    return {**result, "saved_report": saved}
+
+
+@mcp.tool()
+async def list_saved_x_reports(ctx: Context = None) -> dict:
+    """List saved X research report bundles from disk."""
+    _get_app(ctx)
+    reports = list_saved_reports()
+    return {"reports": reports, "count": len(reports)}
 
 
 # ---------------------------------------------------------------------------

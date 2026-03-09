@@ -1,12 +1,32 @@
-"""Formatting and normalization helpers for X research outputs."""
+"""Formatting, normalization, and persistence helpers for X research outputs."""
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
+from pathlib import Path
+
+from stealth_browser.persistence import get_app_dir
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _now().isoformat()
+
+
+def slugify(text: str, default: str = "report") -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", (text or "").strip().lower()).strip("-")
+    return slug[:80] or default
+
+
+def get_reports_dir() -> Path:
+    path = get_app_dir() / "reports"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def normalize_research_result(result: dict, kind: str) -> dict:
@@ -82,3 +102,58 @@ def render_research_markdown(result: dict) -> str:
         lines.append("")
 
     return "\n".join(lines).strip() + "\n"
+
+
+def save_report_bundle(result: dict, kind: str, name: str | None = None) -> dict:
+    """Save normalized JSON and markdown report to disk."""
+    normalized = result.get("normalized") or normalize_research_result(result, kind=kind)
+    markdown = result.get("report_markdown") or render_research_markdown(result)
+    query = result.get("query") or name or kind
+    stamp = _now().strftime("%Y%m%d-%H%M%S")
+    slug = slugify(name or query)
+    bundle_dir = get_reports_dir() / f"{stamp}-{slug}"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = bundle_dir / "report.json"
+    md_path = bundle_dir / "report.md"
+    meta_path = bundle_dir / "meta.json"
+
+    json_path.write_text(json.dumps(normalized, indent=2, ensure_ascii=False, sort_keys=True))
+    md_path.write_text(markdown)
+    meta = {
+        "query": query,
+        "kind": normalized.get("kind", kind),
+        "generated_at": normalized.get("generated_at", _now_iso()),
+        "tweet_count": normalized.get("tweet_count"),
+        "json_path": str(json_path),
+        "markdown_path": str(md_path),
+    }
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False, sort_keys=True))
+
+    return {
+        "bundle_dir": str(bundle_dir),
+        "json_path": str(json_path),
+        "markdown_path": str(md_path),
+        "meta_path": str(meta_path),
+        "meta": meta,
+    }
+
+
+def list_saved_reports() -> list[dict]:
+    reports_dir = get_reports_dir()
+    results = []
+    for entry in sorted(reports_dir.iterdir(), key=lambda p: p.name, reverse=True):
+        if not entry.is_dir():
+            continue
+        meta_path = entry / "meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+        except Exception:
+            meta = {"error": "invalid_meta"}
+        results.append({
+            "bundle_dir": str(entry),
+            "meta": meta,
+        })
+    return results
