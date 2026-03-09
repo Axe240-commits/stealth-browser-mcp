@@ -9,7 +9,7 @@ Built for use with [Claude Code](https://claude.ai/claude-code) and other MCP-co
 - **Dual Engine Architecture** — Patchright (Chromium) as primary engine, Camoufox (Firefox) as fallback with stronger anti-fingerprinting
 - **Auto Bot-Block Detection** — Detects Cloudflare, CAPTCHAs, and other bot protection; automatically retries with Firefox when `engine: auto`
 - **Headed Mode via Xvfb** — Runs real browser windows (not headless) to beat fingerprint detection
-- **16 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, persistent profile state save/load/list/delete, X/Twitter search extraction helpers, heuristic topic research summaries, thread readers, and deep topic research
+- **16 MCP Tools** — Browse, interact, extract, scrape, crawl, structured data extraction, session management, persistent profile state save/load/list/delete, X/Twitter search extraction helpers, heuristic topic research summaries, thread readers, and deep topic research with normalized report output
 - **3-Tier Content Extraction** — trafilatura → readability → innertext fallback chain
 - **SSRF-Hardened** — DNS resolution validation blocks localhost, private IPs, cloud metadata, `file://`
 - **Session Pooling** — Up to 5 isolated BrowserContext sessions per engine, with 10-minute idle eviction
@@ -146,7 +146,7 @@ Run X search and produce a lightweight heuristic topic summary from the extracte
 | `profile_name` | string | no | Load a persisted login profile into a fresh session |
 | `engine` | string | no | `auto` (default), `chromium`, or `firefox` |
 
-**Returns:** everything from `search_x` plus `research` with summary, top accounts, top terms, linked domains, media count, and promoted count
+**Returns:** everything from `search_x` plus `research`, `normalized`, and `report_markdown`
 
 ### `read_x_thread`
 
@@ -178,7 +178,7 @@ Run X search, pick a few high-signal tweets, load their thread pages, and produc
 | `profile_name` | string | no | Load a persisted login profile into a fresh session |
 | `engine` | string | no | `auto` (default), `chromium`, or `firefox` |
 
-**Returns:** `deep_dive_candidates`, `threads`, and `deep_research` in addition to the base search output
+**Returns:** `deep_dive_candidates`, `threads`, `deep_research`, `normalized`, and `report_markdown` in addition to the base search output
 
 ### `scrape_webpage`
 

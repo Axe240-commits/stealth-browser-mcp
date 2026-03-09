@@ -35,6 +35,7 @@ from stealth_browser.x_research import (
     summarize_deep_research,
     summarize_x_topic,
 )
+from stealth_browser.x_report import normalize_research_result, render_research_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -522,10 +523,13 @@ async def research_x_topic(
         return search_result
 
     summary = summarize_x_topic(query, search_result.get("tweets", []))
-    return {
+    result = {
         **search_result,
         "research": summary,
     }
+    result["normalized"] = normalize_research_result(result, kind="topic")
+    result["report_markdown"] = render_research_markdown(result)
+    return result
 
 
 @mcp.tool()
@@ -620,12 +624,15 @@ async def research_x_topic_deep(
             threads.append(thread)
 
     deep_research = summarize_deep_research(query, search_result.get("tweets", []), threads)
-    return {
+    result = {
         **search_result,
         "deep_dive_candidates": candidates,
         "threads": threads,
         "deep_research": deep_research,
     }
+    result["normalized"] = normalize_research_result(result, kind="deep_topic")
+    result["report_markdown"] = render_research_markdown(result)
+    return result
 
 
 # ---------------------------------------------------------------------------
