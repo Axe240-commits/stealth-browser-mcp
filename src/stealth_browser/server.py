@@ -30,7 +30,11 @@ from stealth_browser.x_extract import (
     extract_x_search_results as extract_x_search_results_from_page,
     read_x_thread as read_x_thread_from_page,
 )
-from stealth_browser.x_research import summarize_x_topic
+from stealth_browser.x_research import (
+    pick_deep_dive_candidates,
+    summarize_deep_research,
+    summarize_x_topic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -569,6 +573,59 @@ async def read_x_thread(
         }
     except Exception as e:
         return {"error": str(e), "url": url, "session_id": session_id}
+
+
+@mcp.tool()
+async def research_x_topic_deep(
+    query: str,
+    mode: str = "latest",
+    max_items: int = 20,
+    scroll_rounds: int = 1,
+    deep_dive_count: int = 3,
+    thread_items: int = 10,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    engine: str = "auto",
+    ctx: Context = None,
+) -> dict:
+    """Search X, then deep-dive into a few high-signal thread URLs and summarize."""
+    search_result = await search_x(
+        query=query,
+        mode=mode,
+        max_items=max_items,
+        scroll_rounds=scroll_rounds,
+        session_id=session_id,
+        profile_name=profile_name,
+        engine=engine,
+        ctx=ctx,
+    )
+    if "error" in search_result:
+        return search_result
+
+    candidates = pick_deep_dive_candidates(search_result.get("tweets", []), limit=deep_dive_count)
+    threads = []
+    for candidate in candidates:
+        url = candidate.get("tweet_url")
+        if not url:
+            continue
+        thread = await read_x_thread(
+            url=url,
+            max_items=thread_items,
+            session_id=search_result.get("session_id"),
+            profile_name=profile_name,
+            engine=engine,
+            ctx=ctx,
+        )
+        if "error" not in thread:
+            threads.append(thread)
+
+    deep_research = summarize_deep_research(query, search_result.get("tweets", []), threads)
+    return {
+        **search_result,
+        "deep_dive_candidates": candidates,
+        "threads": threads,
+        "deep_research": deep_research,
+    }
 
 
 # ---------------------------------------------------------------------------

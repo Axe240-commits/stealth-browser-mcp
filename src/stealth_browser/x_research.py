@@ -33,6 +33,29 @@ def _tokenize(text: str) -> list[str]:
     return tokens
 
 
+def score_tweet_for_deep_dive(tweet: dict) -> int:
+    """Heuristic ranking to pick interesting tweets for deeper thread reads."""
+    score = 0
+    for key in ["reply_count", "retweet_count", "like_count", "view_count", "bookmark_count"]:
+        value = tweet.get(key)
+        if isinstance(value, int):
+            score += value
+    if tweet.get("quoted_tweet"):
+        score += 25
+    if tweet.get("has_media"):
+        score += 10
+    if tweet.get("username"):
+        score += 5
+    return score
+
+
+def pick_deep_dive_candidates(tweets: list[dict], limit: int = 3) -> list[dict]:
+    limit = max(1, min(int(limit), 5))
+    candidates = [t for t in tweets if t.get("tweet_url")]
+    ranked = sorted(candidates, key=score_tweet_for_deep_dive, reverse=True)
+    return ranked[:limit]
+
+
 def summarize_x_topic(query: str, tweets: list[dict], top_n: int = 5) -> dict:
     top_n = max(1, min(int(top_n), 10))
     total = len(tweets)
@@ -42,6 +65,7 @@ def summarize_x_topic(query: str, tweets: list[dict], top_n: int = 5) -> dict:
     domains = Counter()
     media_count = 0
     promoted_count = 0
+    quote_count = 0
 
     for tweet in tweets:
         username = tweet.get("username")
@@ -58,6 +82,8 @@ def summarize_x_topic(query: str, tweets: list[dict], top_n: int = 5) -> dict:
             media_count += 1
         if tweet.get("is_promoted"):
             promoted_count += 1
+        if tweet.get("quoted_tweet"):
+            quote_count += 1
 
     top_accounts = [
         {"username": username, "mentions": count}
@@ -90,6 +116,8 @@ def summarize_x_topic(query: str, tweets: list[dict], top_n: int = 5) -> dict:
             )
         if media_count:
             summary_parts.append(f"{media_count} tweets include media.")
+        if quote_count:
+            summary_parts.append(f"{quote_count} tweets quote another tweet.")
         if promoted_count:
             summary_parts.append(f"{promoted_count} extracted cards look promoted.")
         short_summary = " ".join(summary_parts)
@@ -102,5 +130,41 @@ def summarize_x_topic(query: str, tweets: list[dict], top_n: int = 5) -> dict:
         "linked_domains": linked_domains,
         "media_count": media_count,
         "promoted_count": promoted_count,
+        "quote_count": quote_count,
         "summary": short_summary,
+    }
+
+
+def summarize_deep_research(query: str, tweets: list[dict], threads: list[dict]) -> dict:
+    base = summarize_x_topic(query, tweets)
+    thread_count = len(threads)
+    reply_total = sum(t.get("reply_count_extracted", 0) for t in threads)
+    main_urls = [
+        t.get("main_tweet", {}).get("tweet_url")
+        for t in threads
+        if t.get("main_tweet")
+    ]
+    highlights = []
+    for thread in threads:
+        main = thread.get("main_tweet") or {}
+        text = (main.get("tweet_text") or "")[:200]
+        if text:
+            highlights.append({
+                "tweet_url": main.get("tweet_url"),
+                "username": main.get("username"),
+                "text": text,
+                "reply_count_extracted": thread.get("reply_count_extracted", 0),
+            })
+
+    summary = base["summary"]
+    if thread_count:
+        summary += f" Deep dive loaded {thread_count} threads with {reply_total} visible replies in total."
+
+    return {
+        **base,
+        "thread_count": thread_count,
+        "reply_total_extracted": reply_total,
+        "deep_dive_urls": [u for u in main_urls if u],
+        "deep_dive_highlights": highlights,
+        "summary": summary,
     }
